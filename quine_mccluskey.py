@@ -116,3 +116,4 @@ class QuineMcCluskeyChart:
 def simplifyBoolean(exp):
     quine = QuineMcCluskeyChart(exp._minTerm)
     
+
