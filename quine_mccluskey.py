@@ -112,3 +112,7 @@ class QuineMcCluskeyChart:
             return (idx, DiffCase.RIGHT)
         else:
             return (-1, DiffCase.NONE)
+
+def simplifyBoolean(exp):
+    quine = QuineMcCluskeyChart(exp._minTerm)
+    
