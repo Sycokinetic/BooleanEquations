@@ -1,28 +1,70 @@
 from quine_mccluskey import QuineMcCluskeyChart
+from itertools import product
+from collections import Counter
 import re
 
-class BooleanExpression:
+class Boolean:
     def __init__(self, val, varSet):
-        self._expression = ''
+        self._minTermExp = ''
+        self._simpleExp = ''
+        self._maxTermExp = ''
         self._minTerm = set()
+        self._maxTerm = set()
         self._varSet = set()
 
         if type(varSet) is not set:
             raise TypeError("Invalid argument type")
         if type(val) is str:
             val = val.replace(' ', '')
-            self._expression = val
             self._varSet = varSet
             self._parseExp(val)
+            self._maxTerm = Boolean._getMaxTerm(self._varSet, self._minTerm)
         elif type(val) is set:
             self._minTerm = val
             self._varSet = varSet
+            self._maxTerm = Boolean._getMaxTerm(self._varSet, self._minTerm)
         else:
             raise TypeError("Invalid argument type")
 
+    def getMinTerm(self):
+        return self._minTerm
+
+    def getMaxTerm(self):
+        return self._maxTerm
+
+    def getMinTermExp(self):
+        if self._minTermExp is '':
+            self._minTermExp = None
+
+        return self._minTermExp
+    
+    def getSimpleExp(self):
+        if self._simpleExp is '':
+           pass 
+
+    def getVarSet(self):
+        return self._varSet
+
+    def _generateExpressions(self):
+        varList = sorted(list(self._varSet))
+
+        binMinTerm = Boolean._itob(self._minTerm, len(self._varSet))
+        self._minTermExp = ''
+        for term in binMinTerm:
+            for i in range(0, len(term)):
+                self._minTermExp += varList[i]
+                if term[i] is '0':
+                    self._minTermExp += '\''
+
+        simpTerm = QuineMcCluskeyChart(binMinTerm).getMinTerm()
+        print(self._minTerm)
+        print(simpTerm)
+
     def _parseExp(self, exp):
         postfix = self._buildPostfix(exp)[0]
-        self._minTerm = BooleanExpression._processPostfix(postfix)._minTerm
+        temp = Boolean._processPostfix(postfix)
+        
+        self._minTerm = Boolean._maskTermToVarSet(temp._minTerm, temp._varSet, self._varSet)
 
     @staticmethod
     def _processPostfix(postfix):
@@ -31,7 +73,7 @@ class BooleanExpression:
         
         for val in postfix:
             if isinstance(val, list):
-                stack.append(BooleanExpression._processPostfix(val))
+                stack.append(Boolean._processPostfix(val))
             elif val is '+':
                 stack.append(stack.pop() + stack.pop())
             elif val is '*':
@@ -45,15 +87,16 @@ class BooleanExpression:
 
     def _buildPostfix(self, exp, i=0, varIdx=0):
         postfix = [None]
-        bExp = BooleanExpression(set(), self._varSet)
+        bExp = Boolean(set(), self._varSet)
 
+        prevVal = None
         curListIdx = 1
         consecTerms = 0
         while i < len(exp):
             if exp[i] is '(':
                 res = self._buildPostfix(exp, i+1, varIdx+1)
 
-                if postfix[curListIdx-1] is '\'' or isinstance(postfix[curListIdx-1], list) or isinstance(postfix[curListIdx-1], BooleanExpression):
+                if isinstance(prevVal, list) or isinstance(prevVal, Boolean):
                     consecTerms += 1
 
                 postfix = postfix[:curListIdx] + [res[0]] + postfix[curListIdx:]
@@ -61,6 +104,7 @@ class BooleanExpression:
 
                 i = res[1]
                 varIdx = i + 1
+                prevVal = res[0]
             elif exp[i] is ')':
                 while consecTerms > 0:
                     postfix = postfix[:curListIdx] + ['*'] + postfix[curListIdx:]
@@ -76,6 +120,7 @@ class BooleanExpression:
 
                 postfix = postfix[:curListIdx] + ['+'] + postfix[curListIdx:]
                 varIdx = i + 1
+                prevVal = None
             elif exp[i] is '*':
                 while consecTerms > 0:
                     postfix = postfix[:curListIdx] + ['*'] + postfix[curListIdx:]
@@ -84,6 +129,7 @@ class BooleanExpression:
 
                 postfix = postfix[:curListIdx] + ['*'] + postfix[curListIdx:]
                 varIdx = i + 1
+                prevVal = None
             elif exp[i] is '\'':
                 postfix = postfix[:curListIdx] + ['\''] + postfix[curListIdx:]
                 curListIdx += 1
@@ -91,14 +137,15 @@ class BooleanExpression:
             elif exp[varIdx:i+1] in self._varSet:
                 var = exp[varIdx:i+1]
 
-                if postfix[curListIdx-1] is '\'' or isinstance(postfix[curListIdx-1], list) or isinstance(postfix[curListIdx-1], BooleanExpression):
+                if isinstance(prevVal, list) or isinstance(prevVal, Boolean):
                     consecTerms += 1
 
-                term = BooleanExpression({1}, {var})
+                term = Boolean({1}, {var})
                 postfix = postfix[:curListIdx] + [term] + postfix[curListIdx:]
 
                 curListIdx += 1
                 varIdx = i + 1
+                prevVal = term
             i += 1
 
         while consecTerms > 0:
@@ -109,11 +156,11 @@ class BooleanExpression:
         return (postfix, -1)
 
     def _doAdd(self, exp):
-        if type(exp) is BooleanExpression:
+        if type(exp) is Boolean:
             union = self._varSet | exp._varSet
 
-            newSelfMinTerm = BooleanExpression._maskTermToVarSet(self._minTerm, self._varSet, union)
-            newExpMinTerm = BooleanExpression._maskTermToVarSet(exp._minTerm, exp._varSet, union)
+            newSelfMinTerm = Boolean._maskTermToVarSet(self._minTerm, self._varSet, union)
+            newExpMinTerm = Boolean._maskTermToVarSet(exp._minTerm, exp._varSet, union)
 
             newMinTerm = newSelfMinTerm | newExpMinTerm
 
@@ -124,11 +171,11 @@ class BooleanExpression:
             raise TypeError(message)
 
     def _doMult(self, exp):
-        if type(exp) is BooleanExpression:
+        if type(exp) is Boolean:
             union = self._varSet | exp._varSet
 
-            newSelfMinTerm = BooleanExpression._maskTermToVarSet(self._minTerm, self._varSet, union)
-            newExpMinTerm = BooleanExpression._maskTermToVarSet(exp._minTerm, exp._varSet, union)
+            newSelfMinTerm = Boolean._maskTermToVarSet(self._minTerm, self._varSet, union)
+            newExpMinTerm = Boolean._maskTermToVarSet(exp._minTerm, exp._varSet, union)
 
             newMinTerm = newSelfMinTerm & newExpMinTerm
             
@@ -140,7 +187,7 @@ class BooleanExpression:
 
     def __add__(self, exp):
         vals = self._doAdd(exp)
-        return BooleanExpression(vals[0], vals[1])
+        return Boolean(vals[0], vals[1])
 
     def __radd__(self, exp):
         return self + exp
@@ -153,7 +200,7 @@ class BooleanExpression:
 
     def __mul__(self, exp):
         vals = self._doMult(exp)
-        return BooleanExpression(vals[0], vals[1])
+        return Boolean(vals[0], vals[1])
 
     def __rmul__(self, exp):
         return self + exp
@@ -165,9 +212,12 @@ class BooleanExpression:
         return self
 
     def __invert__(self):
-        superSet = BooleanExpression._getTermSuperSet(len(self._varSet))
+        superSet = Boolean._getTermSuperSet(len(self._varSet))
 
-        return BooleanExpression(superSet - self._minTerm, self._varSet)
+        return Boolean(superSet - self._minTerm, self._varSet)
+
+    def __eq__(self, val):
+        return self._minTerm == val._minTerm and self._varSet == val._varSet
 
     def __repr__(self):
         return (self._minTerm, self._varSet).__str__()
@@ -176,36 +226,29 @@ class BooleanExpression:
         return (self._minTerm, self._varSet).__str__()
 
     @staticmethod
-    def _getTermSuperSet(numVars):
-        superSet = set()
-        for i in range(0, 2**numVars):
-            superSet.add(i)
+    def _getMaxTerm(varSet, minTerm):
+        superset = Boolean._getTermSuperSet(len(varSet))
+        return superset - minTerm
 
-        return superSet
+    @staticmethod
+    def _getTermSuperSet(numVars):
+        return set(range(2**numVars))
 
     @staticmethod
     def _itob(termSet, size):
-        binSet = set()
-        for n in termSet:
-            binSet.add(('{0:0' + str(size) + 'b}').format(n))
-
-        return binSet
+        return {(size - len(b))*'0' + b for b in map(lambda n: bin(n)[2:], termSet)}
 
     @staticmethod
     def _btoi(termSet):
-        intSet = set()
-        for t in termSet:
-            intSet.add(int(t, 2))
-
-        return intSet
+        return {int(t, 2) for t in termSet}
 
     @staticmethod
     def _maskTermToVarSet(minTerm, oldSet, newSet):
-        binMinTerm = BooleanExpression._itob(minTerm, len(oldSet))
+        binMinTerm = Boolean._itob(minTerm, len(oldSet))
 
         diff = newSet - oldSet
-        diffList = sorted(list(diff))
-        newSetList = sorted(list(newSet))
+        diffList = sorted(diff)
+        newSetList = sorted(newSet)
         
         termQueue = []
         for term in binMinTerm:
@@ -214,22 +257,17 @@ class BooleanExpression:
                 term = term[:i] + '-' + term[i:]
             termQueue.append(term)
         
-        newBinMinTerm = BooleanExpression._expandToMinTerm(termQueue)
+        newBinMinTerm = map(lambda t: "".join(t), Boolean._expandToMinTerm(termQueue))
 
-        return BooleanExpression._btoi(newBinMinTerm)
+        return Boolean._btoi(newBinMinTerm)
 
     @staticmethod
     def _expandToMinTerm(binTermList):
-        newMinTerm = set()
-        for term in binTermList:
-            hasDash = False
-            for i in range(0, len(term)):
-                if term[i] is '-':
-                    hasDash = True
-                    binTermList.append(term[:i] + '0' + term[i+1:])
-                    binTermList.append(term[:i] + '1' + term[i+1:])
-                    break
-            if not hasDash:
-                newMinTerm.add(term)
+        return {b for arr in map(lambda b: Boolean._expandTerm(b), binTermList) for b in arr}
 
-        return newMinTerm
+    @staticmethod
+    def _expandTerm(binTerm):
+        c = Counter(binTerm)['-']
+        perm = map(lambda p: iter(p), product('01', repeat=c))
+        res = map(lambda p: map(lambda c: next(p) if c == '-' else c, binTerm), perm)
+        return res
