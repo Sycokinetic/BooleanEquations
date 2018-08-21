@@ -3,68 +3,82 @@ from itertools import product
 from collections import Counter
 import re
 
+
 class Boolean:
-    def __init__(self, val, varSet):
-        self._minTermExp = ''
-        self._simpleExp = ''
-        self._maxTermExp = ''
-        self._minTerm = set()
-        self._maxTerm = set()
+    def __init__(self, varSet, expr=None, minterm=None, dont_care=None):
+        # Only want at most one of these defined
+        if expr != None and minterm != None:
+            raise ValueError("At most one of [expr, minterm] may be defined")
+
+        
+        self._minterm_exp = ''
+        self._simple_exp = ''
+        self._maxterm_exp = ''
+        self._minterm = set()
+        self._maxterm = set()
         self._varSet = set()
 
         if type(varSet) is not set:
             raise TypeError("Invalid argument type")
-        if type(val) is str:
-            val = val.replace(' ', '')
+
+        if expr is not None:
+            expr = expr.replace(' ', '')
             self._varSet = varSet
-            self._parseExp(val)
-            self._maxTerm = Boolean._getMaxTerm(self._varSet, self._minTerm)
-        elif type(val) is set:
-            self._minTerm = val
+            self._parse_expr(expr)
+            self._maxterm = Boolean._getMaxTerm(self._varSet, self._minterm)
+        elif minterm is not None:
+            self._minterm = minterm
             self._varSet = varSet
-            self._maxTerm = Boolean._getMaxTerm(self._varSet, self._minTerm)
+            self._maxterm = Boolean._getMaxTerm(self._varSet, self._minterm)
+
+        if dont_care is not None:
+            self._dont_care = dont_care
         else:
-            raise TypeError("Invalid argument type")
+            self._dont_care = set()
+
+        if len(self._dont_care & self._minterm) > 0:
+            raise ValueError("dont_care and minterm sets must be disjoint")
+
 
     def getMinTerm(self):
-        return self._minTerm
+        return self._minterm
 
     def getMaxTerm(self):
-        return self._maxTerm
+        return self._maxterm
 
-    def getMinTermExp(self):
-        if self._minTermExp is '':
-            self._minTermExp = None
+    def getMinTerm_exp(self):
+        if self._minterm_exp is '':
+            self._minterm_exp = None
 
-        return self._minTermExp
+        return self._minterm_exp
     
-    def getSimpleExp(self):
-        if self._simpleExp is '':
+    def getSimple_exp(self):
+        if self._simple_exp is '':
            pass 
 
     def getVarSet(self):
         return self._varSet
 
-    def _generateExpressions(self):
+    def _generate_expressions(self):
         varList = sorted(list(self._varSet))
 
-        binMinTerm = Boolean._itob(self._minTerm, len(self._varSet))
-        self._minTermExp = ''
+        binMinTerm = Boolean._itob(self._minterm | self._dont_care, len(self._varSet))
+        self._minterm_exp = ''
         for term in binMinTerm:
             for i in range(0, len(term)):
-                self._minTermExp += varList[i]
+                self._minterm_exp += varList[i]
                 if term[i] is '0':
-                    self._minTermExp += '\''
+                    self._minterm_exp += '\''
 
         simpTerm = QuineMcCluskeyChart(binMinTerm).getMinTerm()
-        print(self._minTerm)
+        print(self._minterm)
         print(simpTerm)
 
-    def _parseExp(self, exp):
+    def _parse_expr(self, exp):
         postfix = self._buildPostfix(exp)[0]
         temp = Boolean._processPostfix(postfix)
         
-        self._minTerm = Boolean._maskTermToVarSet(temp._minTerm, temp._varSet, self._varSet)
+        self._minterm = Boolean._maskTermToVarSet(temp._minterm, temp._varSet, self._varSet)
 
     @staticmethod
     def _processPostfix(postfix):
@@ -87,7 +101,7 @@ class Boolean:
 
     def _buildPostfix(self, exp, i=0, varIdx=0):
         postfix = [None]
-        bExp = Boolean(set(), self._varSet)
+        b_exp = Boolean(set(), self._varSet)
 
         prevVal = None
         curListIdx = 1
@@ -159,10 +173,10 @@ class Boolean:
         if type(exp) is Boolean:
             union = self._varSet | exp._varSet
 
-            newSelfMinTerm = Boolean._maskTermToVarSet(self._minTerm, self._varSet, union)
-            newExpMinTerm = Boolean._maskTermToVarSet(exp._minTerm, exp._varSet, union)
+            newSelfMinTerm = Boolean._maskTermToVarSet(self._minterm, self._varSet, union)
+            new_expMinTerm = Boolean._maskTermToVarSet(exp._minterm, exp._varSet, union)
 
-            newMinTerm = newSelfMinTerm | newExpMinTerm
+            newMinTerm = newSelfMinTerm | new_expMinTerm
 
             return (newMinTerm, union)
         else:
@@ -174,10 +188,10 @@ class Boolean:
         if type(exp) is Boolean:
             union = self._varSet | exp._varSet
 
-            newSelfMinTerm = Boolean._maskTermToVarSet(self._minTerm, self._varSet, union)
-            newExpMinTerm = Boolean._maskTermToVarSet(exp._minTerm, exp._varSet, union)
+            newSelfMinTerm = Boolean._maskTermToVarSet(self._minterm, self._varSet, union)
+            new_expMinTerm = Boolean._maskTermToVarSet(exp._minterm, exp._varSet, union)
 
-            newMinTerm = newSelfMinTerm & newExpMinTerm
+            newMinTerm = newSelfMinTerm & new_expMinTerm
             
             return (newMinTerm, union)
         else:
@@ -194,7 +208,7 @@ class Boolean:
 
     def __iadd__(self, exp):
         vals = self._doAdd(exp)
-        self._minTerm = vals[0]
+        self._minterm = vals[0]
         self._varSet = vals[1]
         return self
 
@@ -207,28 +221,28 @@ class Boolean:
 
     def __imul_(self, exp):
         vals = self._doMult(exp)
-        self._minTerm = vals[0]
+        self._minterm = vals[0]
         self._varSet = vals[1]
         return self
 
     def __invert__(self):
         superSet = Boolean._getTermSuperSet(len(self._varSet))
 
-        return Boolean(superSet - self._minTerm, self._varSet)
+        return Boolean(superSet - self._minterm, self._varSet)
 
     def __eq__(self, val):
-        return self._minTerm == val._minTerm and self._varSet == val._varSet
+        return self._minterm == val._minterm and self._varSet == val._varSet
 
     def __repr__(self):
-        return (self._minTerm, self._varSet).__str__()
+        return (self._minterm, self._dont_care, self._varSet).__str__()
 
     def __str__(self):
-        return (self._minTerm, self._varSet).__str__()
+        return (self._minterm, self._dont_care, self._varSet).__str__()
 
     @staticmethod
-    def _getMaxTerm(varSet, minTerm):
+    def _getMaxTerm(varSet, minterm):
         superset = Boolean._getTermSuperSet(len(varSet))
-        return superset - minTerm
+        return superset - minterm
 
     @staticmethod
     def _getTermSuperSet(numVars):
@@ -243,8 +257,8 @@ class Boolean:
         return {int(t, 2) for t in termSet}
 
     @staticmethod
-    def _maskTermToVarSet(minTerm, oldSet, newSet):
-        binMinTerm = Boolean._itob(minTerm, len(oldSet))
+    def _maskTermToVarSet(minterm, oldSet, newSet):
+        binMinTerm = Boolean._itob(minterm, len(oldSet))
 
         diff = newSet - oldSet
         diffList = sorted(diff)
